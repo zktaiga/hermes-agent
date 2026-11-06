@@ -779,7 +779,9 @@ _JOB_ARG_FIELDS = (("name", "name"), ("deliver", "deliver"), ("failure_deliver",
                    ("monitor_script", "monitor_script"), ("monitor_url", "monitor_url"),
                    ("continuity", "continuity"), ("reasoning_effort", "reasoning_effort"),
                    ("interpreter", "interpreter"), ("timezone", "timezone"),
-                   ("grace_minutes", "grace_minutes"), ("catch_up", "catch_up"))
+                   ("grace_minutes", "grace_minutes"), ("catch_up", "catch_up"),
+                   ("max_runtime_seconds", "max_runtime_seconds"),
+                   ("runtime_grace_seconds", "runtime_grace_seconds"))
 
 
 def _job_api_kwargs(args) -> dict[str, Any]:
@@ -795,7 +797,9 @@ _JOB_DETAIL_LINES = (
     ("continuity", "  Continuity: on (each run sees the previous run's output)"),
     ("timezone", "  Timezone: {} (schedule runs on this zone's wall clock)"),
     ("workdir", "  Workdir: {}"),
-    ("interpreter", "  Python: {}"))
+    ("interpreter", "  Python: {}"),
+    ("max_runtime_seconds", "  Work budget: {} seconds"),
+    ("runtime_grace_seconds", "  Checkpoint grace: {} seconds"))
 
 
 def _print_job_details(job_data: dict[str, Any]) -> None:

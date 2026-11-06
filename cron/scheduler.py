@@ -1940,6 +1940,8 @@ def _run_agent_with_watchdog(
 ) -> dict:
     """Run ``agent.run_conversation`` on a worker thread under the inactivity (not wall-clock)
     watchdog: default 600s, override HERMES_CRON_TIMEOUT, 0 = unlimited."""
+    from cron.scheduler_runtime_budget import CronRuntimeBudget
+    runtime_budget = CronRuntimeBudget.from_job(job)
     _cron_timeout = _cron_inactivity_seconds()
     _cron_inactivity_limit = _cron_timeout if _cron_timeout > 0 else None
     _POLL_INTERVAL = 5.0
@@ -2020,7 +2022,7 @@ def _run_agent_with_watchdog(
             # loop / hung ``get_activity_summary`` on this thread can no longer keep the 600s inactivity
             # limit from firing (#94285).
             _watch_thread.start()
-        if _cron_inactivity_limit is None and not _is_oneshot and cancel_event is None:
+        if _cron_inactivity_limit is None and not _is_oneshot and cancel_event is None and not runtime_budget.enabled:
             result = _cron_future.result()
         else:
             result = None
@@ -2033,6 +2035,7 @@ def _run_agent_with_watchdog(
                 if _inactivity_timeout:
                     break
                 _abort_if_fire_claim_lost()
+                runtime_budget.tick(agent, job_name)
                 _heartbeat_run_claim_if_due()
                 _progress.tick()
     except Exception:
@@ -2558,7 +2561,7 @@ def run_job(
     ``extra_prompt``: optional per-run context from ``cronjob(action='run', prompt=...)`` (#57331). Appended
     to the stored prompt for this fire only — never persisted to the job definition.
     """
-    from gateway.session_cron import current_execution
+    from gateway.session_cron import current_execution, adopt_execution_agent, release_execution_agent
     owner_execution = current_execution()
     if owner_execution is not None and owner_execution[2:] != (job['id'], execution_id):
         owner_execution = None
@@ -2580,6 +2583,7 @@ def run_job(
     logger.info("Prompt: %s", prompt[:100])
 
     agent = None
+    agent_binding = None
     model = ""
     _session_db = None
     _audit: Optional[_FireAudit] = None
@@ -2604,6 +2608,7 @@ def run_job(
         agent = _construct_cron_agent(
             AIAgent, job, _cfg, setup, workdir=scope.workdir, session_id=_cron_session_id,
             session_db=_session_db)
+        agent_binding = adopt_execution_agent(agent)
         _audit = _FireAudit(job, job_id, model)
 
         result = _run_agent_with_watchdog(
@@ -2659,6 +2664,9 @@ def run_job(
         return False, output, "", error_msg
 
     finally:
+        # Control ends before finalization/resource teardown, even when a watchdog worker outlives
+        # the claim. Its late cleanup must never detach a newer generation's agent.
+        release_execution_agent(agent_binding, agent)
         from cron.scheduler_detached_worker import defer_teardown_to_running_worker
         _worker_teardown_deferred = defer_teardown_to_running_worker(
             _worker_state.get("future"), _session_db, agent, job_id, job_name, _cron_session_id,

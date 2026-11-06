@@ -26,6 +26,17 @@ def _add_catch_up(parser) -> None:
              "cron.catch_up_missed for recurring jobs; one-shots skip.")
 
 
+def _add_runtime_budget(parser) -> None:
+    parser.add_argument(
+        "--max-runtime-seconds", type=int,
+        help="Agent work budget in elapsed seconds (0 disables; omitted preserves the setting). "
+             "On expiry request checkpoint/cleanup, then stop after the grace period.")
+    parser.add_argument(
+        "--runtime-grace-seconds", type=int,
+        help="Checkpoint/cleanup grace after the work budget (default 900; 0 stops immediately). "
+             "Expiry may interrupt tools; reserve rollback time before production changes.")
+
+
 def build_cron_parser(subparsers, *, cmd_cron: Callable) -> None:
     """Attach the ``cron`` subcommand (and its sub-actions) to ``subparsers``."""
     cron_parser = subparsers.add_parser(
@@ -53,6 +64,7 @@ def build_cron_parser(subparsers, *, cmd_cron: Callable) -> None:
             "follow --deliver.")
     cron_create.add_argument("--repeat", type=int, help="Optional repeat count")
     _add_catch_up(cron_create)
+    _add_runtime_budget(cron_create)
     cron_create.add_argument("--skill", dest="skills", action="append",
         help="Attach a skill. Repeat to add multiple skills.")
     cron_create.add_argument("--script",
@@ -128,6 +140,7 @@ def build_cron_parser(subparsers, *, cmd_cron: Callable) -> None:
             "'local' suppresses; '' clears the override)")
     cron_edit.add_argument("--repeat", type=int, help="New repeat count")
     _add_catch_up(cron_edit)
+    _add_runtime_budget(cron_edit)
     cron_edit.add_argument("--skill", dest="skills", action="append",
         help="Replace the job's skills with this set. Repeat to attach multiple skills.")
     cron_edit.add_argument("--add-skill", dest="add_skills", action="append",

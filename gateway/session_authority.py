@@ -312,6 +312,10 @@ class SessionAuthority:
     def agent(self, ref):
         from gateway.session_detached import running_key
         live = self.sessions[ref.session_id]
+        with live.event_stream.lock:
+            generation, agent = self.adopted.get(ref.session_id, (None, None))
+            if generation is not None and self.executing.get(ref.session_id) == generation:
+                return agent
         lookup = getattr(self.runner, '_resident_agent_for', None) or self.runner._cached_agent_for
         return lookup(running_key(self.runner, live.route, ref.session_id))
 
@@ -993,10 +997,11 @@ class SessionAuthority:
         event_stream.lock after check_approval_generation. Before the turn adopts its agent the
         resident one is the previous turn's cached agent, which this turn may replace, so *text* is
         latched for the agent this generation adopts (adopt_agent, under the same lock):
-        ``(None, True)``. A claim with no steer seam (cron, managed worker) latches nothing."""
+        ``(None, True)``. A claim with no steer seam (managed worker) latches nothing."""
         adopted_generation, agent = self.adopted.get(ref.session_id, (None, None))
-        if adopted_generation != generation:
-            agent = self.agent(ref) if self._runs_own_agent(ref) else None
+        if adopted_generation == generation:
+            return agent, False  # None marks an adopted cron agent released before slow teardown.
+        agent = self.agent(ref) if self._runs_own_agent(ref) else None
         from gateway.session_busy_controls import adopts_owner_agent
         if agent is not None or text is None or not adopts_owner_agent(self, ref):
             return agent, False

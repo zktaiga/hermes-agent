@@ -49,16 +49,18 @@ async def subagent_control(connection, ref, params, *, steer):
     with live.event_stream.lock:
         _require_current_route(connection.authority, ref)
         child = next((r['agent'] for r in _owner_objects(connection.authority, ref)[1] if r.get('subagent_id') == sub), None)
-    if not steer:
-        from agent.interrupt_compat import request_hard_interrupt
-        return {'found': child is not None and bool(request_hard_interrupt(child, f'Interrupted via Desktop ({sub})')),
-                'subagent_id': sub}
-    from tools import delegate_tool_registry as registry
-    with registry._active_subagents_lock:  # linearized with the child's final steer drain
-        record = registry._active_subagents.get(sub)
-        queued = bool(child is not None and record and record.get('agent') is child and record.get('accepting_steer')
-                      and child.steer(params['text']))
-    return {'status': 'queued' if queued else 'rejected', 'subagent_id': sub, 'text': params['text']}
+        if steer:
+            from tools import delegate_tool_registry as registry
+            with registry._active_subagents_lock:  # linearized with the child's final steer drain
+                record = registry._active_subagents.get(sub)
+                queued = bool(child is not None and record and record.get('agent') is child and record.get('accepting_steer')
+                              and child.steer(params['text']))
+            return {'status': 'queued' if queued else 'rejected', 'subagent_id': sub, 'text': params['text']}
+    # Stop may wait for compression/resource finalization, whose callbacks take the event lock.
+    # Selection above is the authorization edge; keep the exact child object, never re-resolve it.
+    from agent.interrupt_compat import request_hard_interrupt
+    return {'found': child is not None and bool(request_hard_interrupt(child, f'Interrupted via Desktop ({sub})')),
+            'subagent_id': sub}
 
 
 async def show_tools(connection, ref, params):
@@ -262,7 +264,10 @@ def _project(authority, ref, params, kind):
     _require_current_route(authority, ref)
     agent, records = _owner_objects(authority, ref, include_fallback_evicted=kind == 'subagents')
     if kind == 'subagents':
-        return {'subagents': [{key: record.get(key) for key in _SUBAGENT_FIELDS}
+        controllable = {id(record['agent']) for record in subagent_records(agent, include_fallback_evicted=False)}
+        return {'subagents': [{**{key: record.get(key) for key in _SUBAGENT_FIELDS},
+                              'accepting_steer': bool(record.get('accepting_steer')
+                                                      and id(record.get('agent')) in controllable)}
                               for record in records], 'delegations': []}
     if kind == 'tail':
         return subagent_tail(records, params['subagent_id'])

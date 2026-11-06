@@ -512,6 +512,9 @@ def _format_job(job: dict[str, Any]) -> dict[str, Any]:
     for key in _FORMAT_JOB_OPTIONAL_KEYS:
         if job.get(key):
             result[key] = True if key == "no_agent" else job[key]
+    for key in ("max_runtime_seconds", "runtime_grace_seconds"):
+        if job.get(key) is not None:
+            result[key] = job[key]
     stored_refs = job.get("context_from") or []
     if isinstance(stored_refs, str):
         stored_refs = [stored_refs]

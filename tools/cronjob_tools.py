@@ -732,6 +732,8 @@ def _action_create(a: dict[str, Any]) -> str:
             reasoning_effort=a["reasoning_effort"], interpreter=a["interpreter"],
             timezone=_normalize_optional_job_value(a["timezone"]),
             grace_minutes=a["grace_minutes"],
+            max_runtime_seconds=a["max_runtime_seconds"],
+            runtime_grace_seconds=a["runtime_grace_seconds"],
             pinned=bool(a["pinned"]),
             failure_deliver=_resolve_cron_context_deliver(_normalize_deliver_param(a["failure_deliver"])),
             catch_up=a["catch_up"],
@@ -945,6 +947,9 @@ def _update_run_fields(job: dict[str, Any], a: dict[str, Any], updates: dict[str
     if a["enabled_toolsets"] is not None:
         # [] is an explicit zero-tool allowlist, not a clear back to the unrestricted default (#82010).
         updates["enabled_toolsets"] = a["enabled_toolsets"]
+    for key in ("max_runtime_seconds", "runtime_grace_seconds"):
+        if a[key] is not None:
+            updates[key] = a[key]
     if a["attach_to_session"] is not None:
         updates["attach_to_session"] = bool(a["attach_to_session"])
     if a["workdir"] is not None:
@@ -1079,7 +1084,9 @@ def cronjob(
     pinned: Optional[bool] = None,
     interpreter: Optional[str] = None,
     timezone: Optional[str] = None,
-    grace_minutes: Optional[int | str] = None) -> str:
+    grace_minutes: Optional[int | str] = None,
+    max_runtime_seconds: Optional[int] = None,
+    runtime_grace_seconds: Optional[int] = None) -> str:
     """Unified cron job management tool."""
     a = dict(locals())
     del a["task_id"]  # unused but kept for handler signature compatibility

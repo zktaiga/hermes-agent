@@ -37,6 +37,7 @@ from cron.env_settings import cron_env_setting
 from cron.jobs_invariants import _validate_job_mode_invariants, validate_schedule_knobs
 from cron.jobs_model_pin import _main_model_pin
 from cron import jobs_time
+from cron.scheduler_runtime_budget import normalize_runtime_seconds, normalize_runtime_grace_seconds
 from cron.scheduler_ownership import _claim_owner_is_dead
 from cron import extra_fire, store_health
 from typing import Optional, Dict, List, Any, Callable, Set, Tuple, Union, Collection
@@ -1767,6 +1768,8 @@ _CREATE_FIELD_NORMALIZERS: dict[str, Callable[[Any], Any]] = {
     "timezone": jobs_time.normalize_timezone,
     "grace_minutes": jobs_time.normalize_grace_minutes,
     "catch_up": _normalize_catch_up,
+    "max_runtime_seconds": normalize_runtime_seconds,
+    "runtime_grace_seconds": normalize_runtime_grace_seconds,
 }
 _UPDATE_FIELD_NORMALIZERS: dict[str, Callable[[Any], Any]] = {
     # [] is an explicit zero-tool allowlist and must survive the update path as [] too (#82010).
@@ -1781,6 +1784,8 @@ _UPDATE_FIELD_NORMALIZERS: dict[str, Callable[[Any], Any]] = {
     "timezone": jobs_time.normalize_timezone,
     "grace_minutes": jobs_time.normalize_grace_minutes,
     "catch_up": _normalize_catch_up,
+    "max_runtime_seconds": normalize_runtime_seconds,
+    "runtime_grace_seconds": normalize_runtime_grace_seconds,
 }
 
 
@@ -1835,6 +1840,8 @@ def create_job(
     interpreter: Optional[str] = None,
     timezone: Optional[str] = None,
     grace_minutes: Optional[int] = None,
+    max_runtime_seconds: Optional[int] = None,
+    runtime_grace_seconds: Optional[int] = None,
 ) -> dict[str, Any]:
     """Create a new cron job and return the stored record.
 
@@ -1939,6 +1946,8 @@ def create_job(
         ("failure_deliver", f["failure_deliver"]), ("interpreter", f["interpreter"]),
         ("timezone", f["timezone"]), ("grace_minutes", f["grace_minutes"]),
         ("catch_up", f["catch_up"]),
+        ("max_runtime_seconds", f["max_runtime_seconds"]),
+        ("runtime_grace_seconds", f["runtime_grace_seconds"]),
     ):
         if value is not None:
             job[key] = value

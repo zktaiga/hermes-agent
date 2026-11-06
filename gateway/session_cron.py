@@ -17,6 +17,45 @@ from hermes_state_runtime import RuntimeStoreError, admit_session_input, get_ses
 
 _execution: ContextVar[tuple | None] = ContextVar('cron_owner_execution', default=None)
 _owners = {}
+_generation: ContextVar[int | None] = ContextVar('cron_owner_generation', default=None)
+
+
+def adopt_execution_agent(agent):
+    """Install the scheduler's agent only for the claim captured by execute(), never a successor.
+
+    A bare bind_execution supplies store/cron identity, not permission to control a live claim.
+    The returned binding is also the release receipt; teardown must not detach a replacement.
+    """
+    execution, generation = current_execution(), _generation.get()
+    if execution is None or generation is None:
+        return None
+    authority, session_id = execution[:2]
+    live = authority.sessions.get(session_id)
+    if live is None:
+        raise RuntimeStoreError('stale_generation')
+    with live.event_stream.lock:
+        from gateway.session_authorities import require_serving
+        require_serving(authority)
+        if authority.executing.get(session_id) != generation:
+            raise RuntimeStoreError('stale_generation')
+        try:
+            authority.adopt_agent(session_id, generation, agent)
+        except BaseException:
+            release_execution_agent((authority, session_id, generation, live), agent)
+            raise
+    return authority, session_id, generation, live
+
+
+def release_execution_agent(binding, agent):
+    if binding is None:
+        return
+    authority, session_id, generation, live = binding
+    with live.event_stream.lock:
+        adopted_generation, adopted_agent = authority.adopted.get(session_id, (None, None))
+        if adopted_generation == generation and adopted_agent is agent:
+            # Keep the closed generation until settlement clears it: a steer during slow teardown
+            # must be rejected, not acknowledged into a pre-construction latch nobody will consume.
+            authority.adopted[session_id] = (generation, None)
 
 
 def bind_owner(authority):
@@ -295,6 +334,7 @@ async def execute(authority, ref, row, policy):
     # The frozen snapshot predates the fire's ledger row; the run's progress stamps need its id.
     job = dict(data['cron_job'], execution_id=execution_id)
     token = bind_execution(authority, ref.session_id, job['id'], execution_id)
+    generation_token = _generation.set(row.get('generation'))
     try:
         from cron.cancellation import CancelRequest, _CombinedCancelEvent
 
@@ -317,5 +357,6 @@ async def execute(authority, ref, row, policy):
     finally:
         from cron.scheduler_liveness import owner_progress
         owner_progress.pop(execution_id, None)
+        _generation.reset(generation_token)
         _execution.reset(token)
         cancellations.pop(row['admission_id'], None)

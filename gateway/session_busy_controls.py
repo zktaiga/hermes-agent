@@ -163,12 +163,10 @@ async def yolo_config(connection, ref, params, write):
 
 def adopts_owner_agent(authority, ref):
     """The claimed turn runs an in-process owner agent, which adopt_agent hands latched steers to;
-    a cron job or a managed worker has no steer seam, so a latch there would be acknowledged and lost."""
+    a managed worker has no steer seam, so a latch there would be acknowledged and lost."""
     from gateway.session_managed_worker import managed_policy
-    from gateway.session_policy import policy_for_source
     try:
-        policy = policy_for_source(authority.runner, authority.sessions[ref.session_id].source)
-        return not (policy is not None and policy.source == 'cron') and managed_policy(authority, ref) is None
+        return managed_policy(authority, ref) is None
     except RuntimeStoreError:
         return False
 

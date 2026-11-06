@@ -43,6 +43,33 @@ Whichever provider a job resolves to, its provider-specific request settings (e.
 Cron-run sessions cannot recursively create more cron jobs. Hermes disables cron management tools inside cron executions to prevent runaway scheduling loops.
 :::
 
+## Optional elapsed-runtime budget
+
+The inactivity watchdog stops a stalled agent; it does not stop an agent that keeps doing more work.
+For a bounded agent job, the owner can additionally set a per-run work budget:
+
+```bash
+hermes cron edit JOB_ID --max-runtime-seconds 3600 --runtime-grace-seconds 900
+```
+
+After 3600 seconds of agent execution, the scheduler sends one wind-down instruction to the
+coordinator and its active child tree: start no new work, checkpoint unfinished work, clean up and
+return. After the additional 900 seconds, it explicitly interrupts that run and records an
+incomplete/failed outcome instead of successful maintenance. Polling remains active even when the
+inactivity timeout is disabled. A run that has already finished is not retroactively failed.
+
+The limit is opt-in; omitted or `0` means no elapsed-runtime budget. An omitted grace uses 900
+seconds; an explicit `0` stops immediately at the work limit. These owner-only CLI fields are not
+forwarded from model tool arguments, so an autonomous worker cannot raise or disable its cap.
+They apply to agent execution, not pre-run scripts or delivery retries. Script timeouts remain
+separate, and unrelated jobs retain their existing behavior.
+
+**This is a Stop, not a transaction manager.** Expiry can interrupt tools and external work may
+survive it. Choose a budget that reserves verification/rollback time, make risky stages independently
+recoverable, bound individual tools, and reconcile side effects before resuming. The grace period
+is for safe checkpoint/cleanup, not another upgrade batch. No replacement job is automatically
+created when the runtime budget expires.
+
 ## Admission recovery
 
 Agent-backed runs retain their fire identity until output and a durable delivery handoff are recorded.

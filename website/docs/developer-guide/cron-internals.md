@@ -19,6 +19,20 @@ The cron subsystem provides scheduled task execution — from simple one-shot de
 | `gateway/run.py` | Gateway integration — cron ticking in the long-running loop |
 | `hermes_cli/cron.py` | CLI `hermes cron` subcommands |
 
+## Live session controls
+
+Canonical cron execution captures the admission generation in `gateway/session_cron.py` before
+crossing into the scheduler thread. Immediately after construction, `run_job` adopts its actual
+agent under that session's stream lock, only while the captured generation is still executing.
+Pre-construction Steer and Stop use the existing generation-scoped latches. The agent is released
+by both generation and object identity before session finalization or resource teardown, including
+when teardown is deferred for delivery or a watchdog worker outlives the execution.
+
+The adopted parent also supplies the existing resident-parent ancestry check for child controls.
+Durable lineage remains read-only: a child can appear in `subagent.list` after parent eviction
+without becoming controllable. Its projected `accepting_steer` is false unless both its own steer
+window and the resident-parent route are available; listing a child never grants control of it.
+
 ## Scheduling Model
 
 Four schedule formats are supported:
